@@ -1,11 +1,12 @@
 // Turns text into a list of numbers (an "embedding") that represents its meaning.
 // The model runs on this server; no text is sent to an outside AI service.
+import { fileURLToPath } from 'node:url';
 import { pipeline, env } from '@huggingface/transformers';
 
 const MODEL_ID = process.env.MODEL_ID || 'Xenova/all-MiniLM-L6-v2';
 
 // Keep downloaded model files inside the project (gitignored), not in a global cache.
-env.cacheDir = new URL('../.cache/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+env.cacheDir = fileURLToPath(new URL('../.cache/', import.meta.url));
 
 let extractorPromise = null;
 
