@@ -1,6 +1,8 @@
 -- Been There, Done That: baseline schema.
 -- Three main lists: founders, blockers (always private), stories (shown only as the author chose).
 
+ALTER TABLE IF EXISTS stories ADD COLUMN IF NOT EXISTS problem TEXT;
+
 CREATE TABLE IF NOT EXISTS startups (
   id    SERIAL PRIMARY KEY,
   name  TEXT NOT NULL
@@ -32,9 +34,12 @@ CREATE TABLE IF NOT EXISTS stories (
   id          SERIAL PRIMARY KEY,
   founder_id  INTEGER NOT NULL REFERENCES founders(id) ON DELETE CASCADE,
   blocker_id  INTEGER REFERENCES blockers(id) ON DELETE SET NULL,
+  -- The problem it solved, shown on the story card. The author sees it in the preview before sharing.
+  problem     TEXT NOT NULL CHECK (length(problem) BETWEEN 1 AND 300),
   text        TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 1500),
   share       TEXT NOT NULL CHECK (share IN ('email', 'anonymous', 'private')),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Meaning-numbers of "problem. what helped", used for matching.
   embedding   REAL[] NOT NULL
 );
 

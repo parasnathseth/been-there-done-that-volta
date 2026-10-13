@@ -27,6 +27,14 @@ export async function embed(text) {
   return Array.from(output.data);
 }
 
+/**
+ * The text used to match a story: the problem it solved plus what helped.
+ * Matching on both is much more accurate than the story text alone (see npm run eval).
+ */
+export function storyMatchText(problem, text) {
+  return `${problem}. ${text}`;
+}
+
 /** Similarity from about 0 (unrelated) to 1 (same meaning). */
 export function similarity(a, b) {
   let sum = 0;

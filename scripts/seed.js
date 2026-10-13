@@ -1,6 +1,6 @@
 // Fills the database with invented sample data. Wipes existing demo data first.
 import { pool, transaction } from '../src/db.js';
-import { embed } from '../src/embed.js';
+import { embed, storyMatchText } from '../src/embed.js';
 import { monthsAgo, toSqlMonth } from '../src/months.js';
 import { startups, founders, stories, otherBlockers } from '../data/sample.js';
 
@@ -9,7 +9,7 @@ const emailFor = (name) =>
 
 console.log('Embedding sample text (first run downloads the model)...');
 const storyVectors = [];
-for (const s of stories) storyVectors.push(await embed(s.text));
+for (const s of stories) storyVectors.push(await embed(storyMatchText(s.blocker, s.text)));
 const blockerVectors = [];
 for (const b of otherBlockers) blockerVectors.push(b.consent ? await embed(b.text) : null);
 
@@ -39,9 +39,9 @@ try {
         [founderIds[s.founder], s.blocker, toSqlMonth(monthsAgo(s.reportedAgo)), toSqlMonth(monthsAgo(s.solvedAgo))]
       );
       await db.query(
-        `INSERT INTO stories (founder_id, blocker_id, text, share, created_at, embedding)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [founderIds[s.founder], rows[0].id, s.text, s.share, monthsAgo(s.solvedAgo), storyVectors[i]]
+        `INSERT INTO stories (founder_id, blocker_id, problem, text, share, created_at, embedding)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [founderIds[s.founder], rows[0].id, s.blocker, s.text, s.share, monthsAgo(s.solvedAgo), storyVectors[i]]
       );
     }
 
