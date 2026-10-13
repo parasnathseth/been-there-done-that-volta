@@ -1,0 +1,21 @@
+{
+  "name": "been-there-done-that-volta",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Matches Volta founders who are stuck with residents who have solved the same problem. Baseline demo.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/server.js",
+    "db:setup": "node --env-file=.env scripts/setup-db.js",
+    "db:seed": "node --env-file=.env scripts/seed.js",
+    "eval": "node --env-file=.env scripts/eval-matching.js"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.0",
+    "express": "5.2.1",
+    "pg": "8.23.0"
+  }
+}

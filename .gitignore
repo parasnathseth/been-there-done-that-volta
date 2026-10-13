@@ -1,0 +1,18 @@
+# Secrets: never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+dist/
+
+# Cached AI model files (downloaded on first run)
+.cache/
+models/
+
+# Logs and OS files
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
