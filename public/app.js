@@ -460,9 +460,11 @@ const PAGES = {
 
 function renderTabs() {
   const tabs = $('tabs');
-  tabs.replaceChildren(...Object.entries(PAGES)
-    .filter(([, p]) => p.role === state.me.role)
-    .map(([key, p]) => el('button', { type: 'button', 'aria-current': key === state.page ? 'page' : null, onclick: () => render(key) }, p.label)));
+  const pages = Object.entries(PAGES).filter(([, p]) => p.role === state.me.role);
+  // With only one page (Laura), there's nothing to switch between, so hide the bar.
+  tabs.hidden = pages.length < 2;
+  tabs.replaceChildren(...pages.map(([key, p]) =>
+    el('button', { type: 'button', 'aria-current': key === state.page ? 'page' : null, onclick: () => render(key) }, p.label)));
 }
 
 async function render(page) {

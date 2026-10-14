@@ -14,6 +14,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 "Seg
 .brand span { color: var(--muted); font-weight: 400; }
 .viewas { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 14px; }
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; max-width: 800px; margin: 18px auto 0; padding: 0 16px; }
+.tabs[hidden] { display: none; }
 .tabs button { background: transparent; border: 1px solid transparent; color: var(--muted); padding: 8px 14px; border-radius: 8px; font: inherit; cursor: pointer; }
 .tabs button:hover { color: var(--text); }
 .tabs button[aria-current="page"] { color: var(--text); background: var(--panel); border-color: var(--line); }
