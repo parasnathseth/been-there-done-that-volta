@@ -110,7 +110,7 @@ app.get('/api/update', founderOnly, wrap(async (req, res) => {
 }));
 
 // Submit the monthly update.
-// Body: { pastBlockers: [{ id, status: 'open'|'solved', story?: { text, share } }],
+// Body: { pastBlockers: [{ id, status: 'open'|'solved', storyHelped?: boolean, story?: { text, share } }],
 //         newBlocker?: { text, matchConsent } }
 app.post('/api/update', founderOnly, wrap(async (req, res) => {
   const past = Array.isArray(req.body.pastBlockers) ? req.body.pastBlockers.slice(0, 20) : [];
@@ -128,7 +128,8 @@ app.post('/api/update', founderOnly, wrap(async (req, res) => {
     if (storyText && !SHARE_CHOICES.includes(share)) {
       return res.status(400).json({ error: 'Choose how to share each story you wrote.' });
     }
-    solved.push({ id: Number(item.id), storyText, share });
+    const storyHelped = typeof item.storyHelped === 'boolean' ? item.storyHelped : null;
+    solved.push({ id: Number(item.id), storyText, share, storyHelped });
   }
 
   // Ownership: every blocker must belong to this founder and still be open.
@@ -153,8 +154,8 @@ app.post('/api/update', founderOnly, wrap(async (req, res) => {
   const newBlockerId = await transaction(async (db) => {
     for (const s of solved) {
       await db.query(
-        `UPDATE blockers SET status = 'solved', solved_month = $1 WHERE id = $2 AND founder_id = $3`,
-        [month, s.id, req.user.id]
+        `UPDATE blockers SET status = 'solved', solved_month = $1, story_helped = $2 WHERE id = $3 AND founder_id = $4`,
+        [month, s.storyHelped, s.id, req.user.id]
       );
       if (s.storyText) {
         await db.query(
@@ -177,6 +178,22 @@ app.post('/api/update', founderOnly, wrap(async (req, res) => {
     newBlockerId,
     matches: newEmbedding ? await findMatches(req.user, newEmbedding) : null,
   });
+}));
+
+// Record that a founder opened "Write to ..." on a story (no message content is stored).
+// Only for stories shared with email, from someone else's startup.
+const OUTREACH_METHODS = ['gmail', 'outlook', 'app', 'copy'];
+app.post('/api/outreach', founderOnly, wrap(async (req, res) => {
+  const method = req.body.method;
+  if (!OUTREACH_METHODS.includes(method)) return res.status(400).json({ error: 'Unknown way of reaching out.' });
+  const { rows } = await query(
+    `SELECT s.id FROM stories s JOIN founders f ON f.id = s.founder_id
+      WHERE s.id = $1 AND s.share = 'email' AND s.founder_id <> $2 AND f.startup_id IS DISTINCT FROM $3`,
+    [Number(req.body.storyId), req.user.id, req.user.startup_id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Story not found.' });
+  await query('INSERT INTO outreach_clicks (founder_id, story_id, method) VALUES ($1, $2, $3)', [req.user.id, rows[0].id, method]);
+  res.json({ ok: true });
 }));
 
 // Matches for each of my open blockers where I turned matching on.
@@ -258,6 +275,16 @@ app.get('/api/summary', adminOnly, wrap(async (req, res) => {
             (SELECT count(DISTINCT founder_id) FROM blockers WHERE status = 'open')::int AS open_founders,
             (SELECT count(*) FROM stories WHERE share <> 'private')::int AS shared_stories,
             (SELECT count(DISTINCT founder_id) FROM stories WHERE share <> 'private')::int AS sharing_founders`);
+  // Proposal measures, over the same 6 months as the table.
+  const recent = since;
+  const outreach = await query(
+    `SELECT count(DISTINCT founder_id)::int AS founders, count(*)::int AS clicks
+       FROM outreach_clicks WHERE created_at >= $1`, [recent]);
+  const helped = await query(
+    `SELECT count(*) FILTER (WHERE story_helped)::int AS yes,
+            count(*) FILTER (WHERE story_helped IS NOT NULL)::int AS answered,
+            count(DISTINCT founder_id) FILTER (WHERE story_helped IS NOT NULL)::int AS founders
+       FROM blockers WHERE status = 'solved' AND solved_month >= $1`, [recent]);
 
   const hide = (n, founders) => (founders >= MIN_FOUNDERS_FOR_TOTALS ? n : null);
   const key = (d) => toSqlMonth(new Date(d));
@@ -287,6 +314,9 @@ app.get('/api/summary', adminOnly, wrap(async (req, res) => {
       ? Math.round(avgMonths * 10) / 10 : null,
     openNow: hide(t.open_now, t.open_founders),
     sharedStories: hide(t.shared_stories, t.sharing_founders),
+    reachedOut: hide(outreach.rows[0].founders, outreach.rows[0].founders),
+    storyHelped: helped.rows[0].founders >= MIN_FOUNDERS_FOR_TOTALS
+      ? { yes: helped.rows[0].yes, answered: helped.rows[0].answered } : null,
     minFounders: MIN_FOUNDERS_FOR_TOTALS,
   });
 }));

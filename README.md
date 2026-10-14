@@ -26,10 +26,12 @@ Use **View as** at the top to switch between people from the data pack (e.g. Jor
 
 | Page | Who | What it does |
 |---|---|---|
-| Monthly update | Founders | Mark past blockers solved or still working on it; share what helped (email, anonymous or private) with a preview; report this month's blocker and choose whether to use it for matching |
-| My matches | Founders | Stories that match each open blocker with matching turned on |
+| Monthly update | Founders | Mark past blockers solved or still working on it; answer "Did a resident's story help?"; share what helped (email, anonymous or private) with a preview; report this month's blocker and choose whether to use it for matching |
+| My matches | Founders | Stories that match each open blocker with matching turned on. "Write to ..." opens an editable, ready-to-send email with Open in Gmail, Open in Outlook, Open in my email app and Copy |
 | My stories and blockers | Founders | Change how each story is shared, delete it, or turn matching on or off for each blocker |
-| Unstuck summary | Laura | Blockers reported and solved by month, average months to solve, totals hidden when based on fewer than 3 founders |
+| Unstuck summary | Laura | Average months to solve, blockers open, stories shared, founders who reached out to a resident, solved blockers where a story helped, and blockers reported and solved by month. Totals based on fewer than 3 founders are hidden |
+
+**Tracking the proposal's two measures:** clicking any send option in the "Write to ..." window records that the founder reached out (which story and which option, never the message). The "Did a resident's story help?" answer is saved on the solved blocker. A click shows someone tried to reach out, not that an email was sent. The seeded clicks and answers are invented.
 
 ## How matching works
 

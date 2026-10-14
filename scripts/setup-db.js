@@ -8,7 +8,7 @@ try {
   await pool.query(sql);
   const { rows } = await pool.query(
     `SELECT table_name FROM information_schema.tables
-     WHERE table_schema = 'public' AND table_name IN ('startups','founders','blockers','stories')
+     WHERE table_schema = 'public' AND table_name IN ('startups','founders','blockers','stories','outreach_clicks')
      ORDER BY table_name`
   );
   console.log('Tables ready:', rows.map((r) => r.table_name).join(', '));

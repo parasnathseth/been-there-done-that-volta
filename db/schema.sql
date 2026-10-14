@@ -6,6 +6,7 @@ ALTER TABLE IF EXISTS founders ADD COLUMN IF NOT EXISTS title TEXT;
 ALTER TABLE IF EXISTS founders ADD COLUMN IF NOT EXISTS location TEXT;
 ALTER TABLE IF EXISTS founders ADD COLUMN IF NOT EXISTS comes_in TEXT;
 ALTER TABLE IF EXISTS founders ADD COLUMN IF NOT EXISTS can_help_with TEXT;
+ALTER TABLE IF EXISTS blockers ADD COLUMN IF NOT EXISTS story_helped BOOLEAN;
 
 CREATE TABLE IF NOT EXISTS startups (
   id    SERIAL PRIMARY KEY,
@@ -33,6 +34,8 @@ CREATE TABLE IF NOT EXISTS blockers (
   status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'solved')),
   solved_month    DATE,
   match_consent   BOOLEAN NOT NULL DEFAULT FALSE,
+  -- Answer to "Did a resident's story help you solve this?" (null = not answered).
+  story_helped    BOOLEAN,
   -- Meaning-numbers; only stored when the founder ticked "use for matching".
   embedding       REAL[]
 );
@@ -51,6 +54,16 @@ CREATE TABLE IF NOT EXISTS stories (
   embedding   REAL[] NOT NULL
 );
 
+-- A founder opened "Write to ..." on a story. Records that they tried to reach out;
+-- no message content is stored.
+CREATE TABLE IF NOT EXISTS outreach_clicks (
+  id          SERIAL PRIMARY KEY,
+  founder_id  INTEGER NOT NULL REFERENCES founders(id) ON DELETE CASCADE,
+  story_id    INTEGER REFERENCES stories(id) ON DELETE SET NULL,
+  method      TEXT NOT NULL CHECK (method IN ('gmail', 'outlook', 'app', 'copy')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS blockers_founder_idx ON blockers (founder_id);
 CREATE INDEX IF NOT EXISTS stories_founder_idx  ON stories (founder_id);
 CREATE INDEX IF NOT EXISTS stories_share_idx    ON stories (share);
@@ -61,3 +74,4 @@ ALTER TABLE startups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE founders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE blockers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stories  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE outreach_clicks ENABLE ROW LEVEL SECURITY;

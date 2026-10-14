@@ -61,12 +61,9 @@ function storyCard(m, me) {
   if (m.author) {
     by = el('div', { class: 'by' }, el('strong', {}, m.author.name), ` · ${m.author.title}, ${m.author.startup} · ${m.author.location} · shared ${m.author.solved}`);
     const first = m.author.name.split(' ')[0];
-    const subject = `Fellow Volta resident: your note on "${m.problem}"`;
-    const body = `Hi ${first},\n\nI'm ${me.name}, also in the Volta residency. I read how you handled "${m.problem}", and I'm working through something similar.\n\nCould you spare 15 minutes to share what you learned?\n\nThanks,\n${me.name.split(' ')[0]}`;
     actions.append(
-      el('a', { class: 'btn primary', href: `mailto:${encodeURIComponent(m.author.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` }, `Write to ${first}`),
+      el('button', { class: 'btn primary', type: 'button', onclick: () => openEmailWindow(m, me) }, `Write to ${first}`),
       el('span', { class: 'email' }, m.author.email),
-      el('button', { class: 'btn', type: 'button', onclick: () => copy(`${subject}\n\n${body}`, 'Email text copied') }, 'Copy email text'),
     );
   } else {
     by = el('div', { class: 'by' }, 'A Volta resident · shared anonymously, no contact details');
@@ -80,8 +77,58 @@ function storyCard(m, me) {
 }
 
 async function copy(text, done) {
-  try { await navigator.clipboard.writeText(text); toast(done); }
-  catch { toast('Copy not available. Select the text instead.'); }
+  try { await navigator.clipboard.writeText(text); toast(done); return true; }
+  catch { toast('Copy not available. Select the text instead.'); return false; }
+}
+
+// Records that the founder reached out (no message content is sent to the server).
+function logOutreach(storyId, method) {
+  api('/api/outreach', { method: 'POST', body: { storyId, method } }).catch(() => {});
+}
+
+// "Write to ..." opens this window with a ready-to-send email the founder can edit,
+// then send through Gmail, Outlook on the web, their email app, or by copying it.
+function openEmailWindow(m, me) {
+  const first = m.author.name.split(' ')[0];
+  const to = m.author.email;
+  const enc = encodeURIComponent;
+  const subject = el('input', { type: 'text', id: 'mail-subject', value: `Fellow Volta resident: your note on "${m.problem}"` });
+  const body = el('textarea', { id: 'mail-body', rows: '8' });
+  body.value = `Hi ${first},\n\nI'm ${me.name}, also in the Volta residency. I read how you handled "${m.problem}", and I'm working through something similar.\n\nCould you spare 15 minutes to share what you learned?\n\nThanks,\n${me.name.split(' ')[0]}`;
+
+  const openWeb = (method, url, label) => () => {
+    logOutreach(m.id, method);
+    window.open(url(), '_blank', 'noopener');
+    toast(`Opening ${label} in a new tab`);
+  };
+  const appLink = el('a', { class: 'btn', href: '#' }, 'Open in my email app');
+  appLink.addEventListener('click', () => {
+    appLink.href = `mailto:${enc(to)}?subject=${enc(subject.value)}&body=${enc(body.value)}`;
+    logOutreach(m.id, 'app');
+    toast('Opening your email app');
+  });
+
+  const dialog = el('dialog', { class: 'mail', 'aria-labelledby': 'mail-title' },
+    el('div', { class: 'mail-head' },
+      el('h2', { id: 'mail-title' }, `Write to ${m.author.name}`),
+      el('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, 'Close')),
+    el('p', { class: 'hint' }, 'Edit anything you like. Nothing is sent until you send it from your own email.'),
+    el('div', { class: 'field' }, 'To'), el('div', { class: 'email' }, to),
+    el('label', { class: 'field', for: 'mail-subject' }, 'Subject'), subject,
+    el('label', { class: 'field', for: 'mail-body' }, 'Message'), body,
+    el('div', { class: 'actions' },
+      el('button', { class: 'btn primary', type: 'button',
+        onclick: openWeb('gmail', () => `https://mail.google.com/mail/?view=cm&fs=1&to=${enc(to)}&su=${enc(subject.value)}&body=${enc(body.value)}`, 'Gmail') }, 'Open in Gmail'),
+      el('button', { class: 'btn primary', type: 'button',
+        onclick: openWeb('outlook', () => `https://outlook.office.com/mail/deeplink/compose?to=${enc(to)}&subject=${enc(subject.value)}&body=${enc(body.value)}`, 'Outlook') }, 'Open in Outlook'),
+      appLink,
+      el('button', { class: 'btn', type: 'button', onclick: async () => {
+        if (await copy(`To: ${to}\nSubject: ${subject.value}\n\n${body.value}`, 'Email copied')) logOutreach(m.id, 'copy');
+      } }, 'Copy email')),
+  );
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
 }
 
 function matchesBlock(matches, me) {
@@ -97,7 +144,7 @@ async function pageUpdate(main) {
   const choices = new Map(); // blocker id -> { status, text, share }
 
   const pastList = data.pastBlockers.map((b) => {
-    const entry = { status: null, text: '', share: '' };
+    const entry = { status: null, text: '', share: '', storyHelped: undefined };
     choices.set(b.id, entry);
 
     const preview = el('div', { class: 'preview' });
@@ -121,7 +168,16 @@ async function pageUpdate(main) {
     share.addEventListener('change', updatePreview);
     updatePreview();
 
+    const helpedYes = el('input', { type: 'radio', name: `story-helped-${b.id}`, value: 'yes' });
+    const helpedNo = el('input', { type: 'radio', name: `story-helped-${b.id}`, value: 'no' });
+    helpedYes.addEventListener('change', () => { entry.storyHelped = true; });
+    helpedNo.addEventListener('change', () => { entry.storyHelped = false; });
+
     body.append(
+      el('fieldset', { class: 'helped-q' },
+        el('legend', {}, "Did a resident's story help you solve this?"),
+        el('label', { class: 'pill' }, helpedYes, 'Yes'),
+        el('label', { class: 'pill' }, helpedNo, 'No')),
       el('label', { class: 'field', for: `helped-${b.id}` }, 'What helped? (optional)'),
       text,
       el('div', { class: 'note' }, 'Leave out confidential details such as customer names, numbers or contracts.'),
@@ -160,7 +216,11 @@ async function pageUpdate(main) {
     for (const [id, c] of choices) {
       if (!c.status) { error.textContent = 'Mark each blocker from past months as solved or still working on it.'; return; }
       if (c.status === 'solved' && c.text && !c.share) { error.textContent = 'Choose how to share each story you wrote.'; return; }
-      pastBlockers.push({ id, status: c.status, story: c.status === 'solved' && c.text ? { text: c.text, share: c.share } : undefined });
+      pastBlockers.push({
+        id, status: c.status,
+        storyHelped: c.status === 'solved' ? c.storyHelped : undefined,
+        story: c.status === 'solved' && c.text ? { text: c.text, share: c.share } : undefined,
+      });
     }
     submit.disabled = true;
     submit.textContent = 'Submitting…';
@@ -292,7 +352,11 @@ async function pageSummary(main) {
     el('div', { class: 'tiles' },
       el('div', { class: 'tile' }, el('div', { class: 'num' }, val(s.averageMonthsToSolve)), el('div', { class: 'lbl' }, 'Average months to solve a blocker')),
       el('div', { class: 'tile' }, el('div', { class: 'num' }, val(s.openNow)), el('div', { class: 'lbl' }, 'Blockers open now')),
-      el('div', { class: 'tile' }, el('div', { class: 'num' }, val(s.sharedStories)), el('div', { class: 'lbl' }, 'Stories residents have shared'))),
+      el('div', { class: 'tile' }, el('div', { class: 'num' }, val(s.sharedStories)), el('div', { class: 'lbl' }, 'Stories residents have shared')),
+      el('div', { class: 'tile' }, el('div', { class: 'num' }, val(s.reachedOut)), el('div', { class: 'lbl' }, 'Founders who reached out to a resident (last 6 months)')),
+      el('div', { class: 'tile' },
+        el('div', { class: 'num' }, s.storyHelped ? `${s.storyHelped.yes} of ${s.storyHelped.answered}` : val(null)),
+        el('div', { class: 'lbl' }, "Solved blockers where a resident's story helped (last 6 months)"))),
     el('section', { class: 'card' },
       el('h2', {}, 'Blockers by month'),
       el('div', { class: 'table-wrap' },
