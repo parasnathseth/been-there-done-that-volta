@@ -1,18 +1,23 @@
-// Measures matching quality on 40 invented blockers and suggests a minimum score.
-// Runs in memory on the sample data; it does not touch the database.
+// Measures matching quality on test blockers from the data pack and suggests a minimum score.
+// Runs in memory on the data pack; it does not touch the database.
 import { embed, storyMatchText } from '../src/embed.js';
 import { rankStories, DEFAULT_MIN_SCORE } from '../src/match.js';
-import { stories } from '../data/sample.js';
+import { people, keyOf } from '../data/pack.js';
+import { DEMO_HERO } from '../data/pack-overlay.js';
 import { evalPairs } from '../data/eval-pairs.js';
 
-// Same rule as the app: private stories are never candidates.
+// Same as the seeded app: private stories are never candidates, and the demo hero's
+// "Lived through" item starts as an open blocker, not a story.
 const candidates = [];
-for (const s of stories) {
-  if (s.share === 'private') continue;
-  candidates.push({ key: s.key, embedding: await embed(storyMatchText(s.blocker, s.text)) });
+for (const p of people) {
+  if (p.share === 'private' || p.name === DEMO_HERO) continue;
+  candidates.push({ key: keyOf(p.name), embedding: await embed(storyMatchText(p.livedThrough, p.helped, p.canHelpWith)) });
 }
 const blockers = [];
-for (const p of evalPairs) blockers.push({ ...p, embedding: await embed(p.blocker) });
+for (const p of evalPairs) {
+  const expect = p.expect === null ? null : [].concat(p.expect);
+  blockers.push({ ...p, expect, embedding: await embed(p.blocker) });
+}
 
 function evaluate(minScore) {
   let top1 = 0, top3 = 0, positives = 0, quietNegatives = 0, negatives = 0, shownWrong = 0;
@@ -20,9 +25,9 @@ function evaluate(minScore) {
     const ranked = rankStories(b.embedding, candidates, { minScore });
     if (b.expect) {
       positives++;
-      if (ranked[0]?.key === b.expect) top1++;
-      if (ranked.some((r) => r.key === b.expect)) top3++;
-      if (ranked.length && ranked[0].key !== b.expect) shownWrong++;
+      if (ranked[0] && b.expect.includes(ranked[0].key)) top1++;
+      if (ranked.some((r) => b.expect.includes(r.key))) top3++;
+      if (ranked.length && !b.expect.includes(ranked[0].key)) shownWrong++;
     } else {
       negatives++;
       if (ranked.length === 0) quietNegatives++;
@@ -33,6 +38,7 @@ function evaluate(minScore) {
 
 const pct = (a, b) => `${Math.round((100 * a) / b)}%`;
 
+console.log(`\n${blockers.length} test blockers, ${candidates.length} shareable stories`);
 console.log('\nMin score | Right story first | Right story in top 3 | No match when none fits | Wrong story shown first');
 for (let t = 0.25; t <= 0.651; t += 0.05) {
   const r = evaluate(Number(t.toFixed(2)));
@@ -42,12 +48,11 @@ for (let t = 0.25; t <= 0.651; t += 0.05) {
   );
 }
 
-// Detail at the current setting, so misses can be inspected.
 console.log(`\nDetail at min score ${DEFAULT_MIN_SCORE}:`);
 for (const b of blockers) {
   const ranked = rankStories(b.embedding, candidates, { minScore: 0 });
   const best = ranked[0];
   const shown = best.score >= DEFAULT_MIN_SCORE;
-  const ok = b.expect ? shown && best.key === b.expect : !shown;
-  console.log(`${ok ? 'ok  ' : 'MISS'} ${best.score.toFixed(2)} ${b.blocker}  ->  ${shown ? best.key : '(no match shown)'}${b.expect && !ok ? `  [expected ${b.expect}]` : ''}`);
+  const ok = b.expect ? shown && b.expect.includes(best.key) : !shown;
+  console.log(`${ok ? 'ok  ' : 'MISS'} ${best.score.toFixed(2)} ${b.blocker}  ->  ${shown ? best.key : '(no match shown)'}${b.expect && !ok ? `  [expected ${b.expect.join(' or ')}]` : ''}`);
 }

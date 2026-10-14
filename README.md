@@ -2,7 +2,9 @@
 
 A standalone demo, modelled on Volta's monthly founder update. When founders mark a blocker solved, they can share what helped. When another founder reports a similar blocker, they see those stories and can reach out in one click. Every story and blocker has its own consent setting.
 
-All founders, startups and stories in this demo are invented.
+All people and companies come from Volta's made-up data pack (`Volta-demo-data-pack.csv`). Each person's "Lived through" item becomes a shared story and their "Stuck on" item an open blocker. The pack has no "what helped" text, emails or sharing choices, so those are invented in `data/pack-overlay.js`.
+
+**Demo hero: Jordan Gallant** (Spatwell, Charlottetown, never comes into Volta). His "Selling to farmers through a co-op" item starts as an open blocker he can mark solved, and his "Applying for a first IRAP grant" blocker is typed live. It matches Leah Morin's grant story.
 
 ## Run it
 
@@ -12,13 +14,13 @@ Requirements: Node.js 22.6 or newer, and a Supabase project (PostgreSQL).
 npm install
 cp .env.example .env        # then paste your Supabase "Session pooler" connection string into .env
 npm run db:setup            # creates the tables (safe to run again)
-npm run db:seed             # loads the invented sample data (wipes existing demo data)
+npm run db:seed             # loads the data pack (wipes existing demo data)
 npm start                   # http://localhost:3000
 ```
 
 The first run downloads the matching model (about 23 MB) into `.cache/`.
 
-Use **View as** at the top to switch between founders (e.g. Maya Chen) and Laura (admin).
+Use **View as** at the top to switch between people from the data pack (e.g. Jordan Gallant, Anjali Raman) and Laura (admin).
 
 ## What's in it
 
@@ -31,15 +33,15 @@ Use **View as** at the top to switch between founders (e.g. Maya Chen) and Laura
 
 ## How matching works
 
-`src/embed.js` runs the free all-MiniLM-L6-v2 model on this server (no outside AI service) to turn text into 384 numbers that represent its meaning. Each story is stored with the numbers for "the problem it solved + what helped". A blocker is compared with every shareable story; the closest 3 above a minimum score (0.35) are shown.
+`src/embed.js` runs the free all-MiniLM-L6-v2 model on this server (no outside AI service) to turn text into 384 numbers that represent its meaning. Each story is stored with the numbers for "the problem it solved + what helped + what the author can help with". A blocker is compared with every shareable story; the closest 3 above a minimum score (0.40) are shown.
 
-Run `npm run eval` to test matching on 40 invented blockers (`data/eval-pairs.js`). Current results at 0.35:
+Run `npm run eval` to test matching on 43 blockers based on the data pack (`data/eval-pairs.js`), 6 of which have no fitting story. Current results at 0.40:
 
 | Right story shown first | Right story in top 3 | No match shown when none fits |
 |---|---|---|
-| 79% | 85% | 100% (6 of 6) |
+| 76% | 84% | 67% (4 of 6) |
 
-A larger free model (all-mpnet-base-v2, about 420 MB) scored 91% first and 91% in the top 3, with one wrong match on the no-fit cases. It can be tried by changing `MODEL_ID` in `.env` and re-running the seed.
+A lower minimum score finds more right stories but shows more wrong ones for unrelated problems. On an earlier invented data set, a larger free model (all-mpnet-base-v2, about 420 MB) did better; it can be tried by changing `MODEL_ID` in `.env` and re-running the seed.
 
 ## Consent and privacy rules (enforced on the server)
 
@@ -68,6 +70,7 @@ src/db.js             Supabase connection
 src/months.js         month helpers
 db/schema.sql         tables
 scripts/              setup, seed and matching test
-data/                 invented sample data and test pairs
+data/                 data pack loader, invented extras, test blockers
+Volta-demo-data-pack.csv  made-up founders supplied by Volta
 public/               the four pages (plain HTML, CSS and JavaScript)
 ```

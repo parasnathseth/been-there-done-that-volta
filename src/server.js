@@ -29,7 +29,7 @@ app.use(express.static(fileURLToPath(new URL('../public/', import.meta.url))));
 async function currentUser(req, res, next) {
   const id = Number(req.get('X-Demo-User'));
   if (!Number.isInteger(id)) return res.status(401).json({ error: 'Choose who you are viewing as.' });
-  const { rows } = await query('SELECT id, name, email, role, startup_id FROM founders WHERE id = $1', [id]);
+  const { rows } = await query('SELECT id, name, email, role, startup_id, can_help_with FROM founders WHERE id = $1', [id]);
   if (!rows[0]) return res.status(401).json({ error: 'That person does not exist.' });
   req.user = rows[0];
   next();
@@ -54,7 +54,8 @@ const monthLabel = (d) => new Date(d).toLocaleDateString('en-CA', { month: 'long
 async function findMatches(user, blockerEmbedding) {
   const { rows } = await query(
     `SELECT s.id, s.problem, s.text, s.share, s.created_at, s.embedding,
-            f.name AS author_name, f.email AS author_email, st.name AS author_startup
+            f.name AS author_name, f.email AS author_email, f.title AS author_title,
+            f.location AS author_location, st.name AS author_startup
        FROM stories s
        JOIN founders f ON f.id = s.founder_id
        LEFT JOIN startups st ON st.id = f.startup_id
@@ -70,7 +71,8 @@ async function findMatches(user, blockerEmbedding) {
     score: Math.round(s.score * 100) / 100,
     // Name, startup, email and date only when the author chose to share their email.
     author: s.share === 'email'
-      ? { name: s.author_name, startup: s.author_startup, email: s.author_email, solved: monthLabel(s.created_at) }
+      ? { name: s.author_name, title: s.author_title, startup: s.author_startup, location: s.author_location,
+          email: s.author_email, solved: monthLabel(s.created_at) }
       : null,
   }));
 }
@@ -80,9 +82,9 @@ async function findMatches(user, blockerEmbedding) {
 // Demo only: the list for the "View as" switcher.
 app.get('/api/people', wrap(async (req, res) => {
   const { rows } = await query(
-    `SELECT f.id, f.name, f.role, st.name AS startup
+    `SELECT f.id, f.name, f.role, f.location, f.comes_in, st.name AS startup
        FROM founders f LEFT JOIN startups st ON st.id = f.startup_id
-      ORDER BY f.role DESC, f.id`
+      ORDER BY f.role DESC, f.name`
   );
   res.json(rows);
 }));
@@ -140,7 +142,7 @@ app.post('/api/update', founderOnly, wrap(async (req, res) => {
     const problems = new Map(rows.map((r) => [r.id, r.text]));
     for (const s of solved) {
       s.problem = problems.get(s.id);
-      if (s.storyText) s.embedding = await embed(storyMatchText(s.problem, s.storyText));
+      if (s.storyText) s.embedding = await embed(storyMatchText(s.problem, s.storyText, req.user.can_help_with));
     }
   }
 

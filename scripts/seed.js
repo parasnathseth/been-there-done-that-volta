@@ -1,69 +1,88 @@
-// Fills the database with invented sample data. Wipes existing demo data first.
+// Fills the database from Volta-demo-data-pack.csv (made-up founders) plus the invented
+// extras in data/pack-overlay.js. Wipes existing demo data first.
+//
+// For each person:
+//   "Lived through" -> a solved blocker with a shared story (sharing choice from the overlay)
+//   "Stuck on"      -> an open blocker from a recent month (matching on or off from the overlay)
+// The demo hero is different: their "Lived through" item is an open blocker from last month,
+// so they can mark it solved during the demo, and their "Stuck on" item is typed live.
 import { pool, transaction } from '../src/db.js';
 import { embed, storyMatchText } from '../src/embed.js';
 import { monthsAgo, toSqlMonth } from '../src/months.js';
-import { startups, founders, stories, otherBlockers } from '../data/sample.js';
+import { people } from '../data/pack.js';
+import { DEMO_HERO, HERO_PAST_BLOCKER_AGO } from '../data/pack-overlay.js';
 
-const emailFor = (name) =>
-  name.toLowerCase().replace(/\(.*\)/, '').trim().replace(/[^a-z]+/g, '.') + '@example.com';
+const emailFor = (name) => name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, '') + '@example.com';
+const month = (n) => toSqlMonth(monthsAgo(n));
 
-console.log('Embedding sample text (first run downloads the model)...');
-const storyVectors = [];
-for (const s of stories) storyVectors.push(await embed(storyMatchText(s.blocker, s.text)));
-const blockerVectors = [];
-for (const b of otherBlockers) blockerVectors.push(b.consent ? await embed(b.text) : null);
+console.log('Embedding the data pack (first run downloads the model)...');
+for (const p of people) {
+  const isHero = p.name === DEMO_HERO;
+  p.storyEmbedding = isHero ? null : await embed(storyMatchText(p.livedThrough, p.helped, p.canHelpWith));
+  p.stuckEmbedding = !isHero && p.consent ? await embed(p.stuckOn) : null;
+  p.heroPastEmbedding = isHero ? await embed(p.livedThrough) : null;
+}
 
 try {
   await transaction(async (db) => {
     await db.query('TRUNCATE stories, blockers, founders, startups RESTART IDENTITY CASCADE');
 
-    const startupIds = [];
-    for (const name of startups) {
-      const { rows } = await db.query('INSERT INTO startups (name) VALUES ($1) RETURNING id', [name]);
-      startupIds.push(rows[0].id);
+    const companyIds = new Map();
+    for (const company of new Set(people.map((p) => p.company))) {
+      const { rows } = await db.query('INSERT INTO startups (name) VALUES ($1) RETURNING id', [company]);
+      companyIds.set(company, rows[0].id);
     }
 
-    const founderIds = {};
-    for (const f of founders) {
+    for (const p of people) {
       const { rows } = await db.query(
-        'INSERT INTO founders (startup_id, name, email, role) VALUES ($1, $2, $3, $4) RETURNING id',
-        [f.startup === null ? null : startupIds[f.startup], f.name, emailFor(f.name), f.role]
+        `INSERT INTO founders (startup_id, name, email, title, location, comes_in, can_help_with, role)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'founder') RETURNING id`,
+        [companyIds.get(p.company), p.name, emailFor(p.name), p.title, p.location, p.comesIn, p.canHelpWith]
       );
-      founderIds[f.key] = rows[0].id;
-    }
+      const founderId = rows[0].id;
 
-    for (const [i, s] of stories.entries()) {
-      const { rows } = await db.query(
+      if (p.name === DEMO_HERO) {
+        await db.query(
+          `INSERT INTO blockers (founder_id, text, reported_month, match_consent, embedding)
+           VALUES ($1, $2, $3, TRUE, $4)`,
+          [founderId, p.livedThrough, month(HERO_PAST_BLOCKER_AGO), p.heroPastEmbedding]
+        );
+        continue;
+      }
+
+      // "Lived through": solved blocker + story.
+      const solved = await db.query(
         `INSERT INTO blockers (founder_id, text, reported_month, status, solved_month, match_consent)
          VALUES ($1, $2, $3, 'solved', $4, FALSE) RETURNING id`,
-        [founderIds[s.founder], s.blocker, toSqlMonth(monthsAgo(s.reportedAgo)), toSqlMonth(monthsAgo(s.solvedAgo))]
+        [founderId, p.livedThrough, month(p.livedAgo + 2), month(p.livedAgo)]
       );
       await db.query(
         `INSERT INTO stories (founder_id, blocker_id, problem, text, share, created_at, embedding)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [founderIds[s.founder], rows[0].id, s.blocker, s.text, s.share, monthsAgo(s.solvedAgo), storyVectors[i]]
+        [founderId, solved.rows[0].id, p.livedThrough, p.helped, p.share, monthsAgo(p.livedAgo), p.storyEmbedding]
+      );
+
+      // "Stuck on": open blocker.
+      await db.query(
+        `INSERT INTO blockers (founder_id, text, reported_month, match_consent, embedding)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [founderId, p.stuckOn, month(p.stuckAgo), Boolean(p.consent), p.stuckEmbedding]
       );
     }
 
-    for (const [i, b] of otherBlockers.entries()) {
-      await db.query(
-        `INSERT INTO blockers (founder_id, text, reported_month, status, solved_month, match_consent, embedding)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          founderIds[b.founder], b.text, toSqlMonth(monthsAgo(b.reportedAgo)), b.status,
-          b.status === 'solved' ? toSqlMonth(monthsAgo(b.solvedAgo)) : null,
-          Boolean(b.consent), blockerVectors[i],
-        ]
-      );
-    }
+    await db.query(
+      `INSERT INTO founders (startup_id, name, email, title, location, role)
+       VALUES (NULL, 'Laura (Volta)', 'laura@example.com', 'Residency lead', 'Halifax', 'admin')`
+    );
   });
 
   const counts = await pool.query(
-    `SELECT (SELECT count(*) FROM founders) AS founders,
+    `SELECT (SELECT count(*) FROM founders) AS people,
+            (SELECT count(*) FROM startups) AS companies,
             (SELECT count(*) FROM blockers) AS blockers,
             (SELECT count(*) FROM stories) AS stories`
   );
-  console.log('Seeded:', counts.rows[0]);
+  console.log('Seeded from the data pack:', counts.rows[0]);
 } finally {
   await pool.end();
 }

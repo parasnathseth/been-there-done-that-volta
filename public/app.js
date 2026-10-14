@@ -59,7 +59,7 @@ function storyCard(m, me) {
   const actions = el('div', { class: 'actions' });
   let by;
   if (m.author) {
-    by = el('div', { class: 'by' }, el('strong', {}, m.author.name), ` · ${m.author.startup} · solved ${m.author.solved}`);
+    by = el('div', { class: 'by' }, el('strong', {}, m.author.name), ` · ${m.author.title}, ${m.author.startup} · ${m.author.location} · shared ${m.author.solved}`);
     const first = m.author.name.split(' ')[0];
     const subject = `Fellow Volta resident: your note on "${m.problem}"`;
     const body = `Hi ${first},\n\nI'm ${me.name}, also in the Volta residency. I read how you handled "${m.problem}", and I'm working through something similar.\n\nCould you spare 15 minutes to share what you learned?\n\nThanks,\n${me.name.split(' ')[0]}`;
@@ -342,7 +342,7 @@ async function start() {
   state.people = await (await fetch('/api/people')).json();
   const select = $('viewas');
   select.replaceChildren(...state.people.map((p) =>
-    el('option', { value: String(p.id) }, p.role === 'admin' ? `${p.name} (admin)` : `${p.name} · ${p.startup}`)));
+    el('option', { value: String(p.id) }, p.role === 'admin' ? `${p.name} (admin)` : `${p.name} · ${p.startup} · ${p.location}`)));
   select.addEventListener('change', () => switchPerson(select.value));
   await switchPerson(recall('viewas') || state.people.find((p) => p.role === 'founder')?.id);
 }

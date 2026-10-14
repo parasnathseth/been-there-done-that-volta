@@ -2,6 +2,10 @@
 -- Three main lists: founders, blockers (always private), stories (shown only as the author chose).
 
 ALTER TABLE IF EXISTS stories ADD COLUMN IF NOT EXISTS problem TEXT;
+ALTER TABLE IF EXISTS founders ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE IF EXISTS founders ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE IF EXISTS founders ADD COLUMN IF NOT EXISTS comes_in TEXT;
+ALTER TABLE IF EXISTS founders ADD COLUMN IF NOT EXISTS can_help_with TEXT;
 
 CREATE TABLE IF NOT EXISTS startups (
   id    SERIAL PRIMARY KEY,
@@ -13,6 +17,10 @@ CREATE TABLE IF NOT EXISTS founders (
   startup_id  INTEGER REFERENCES startups(id),
   name        TEXT NOT NULL,
   email       TEXT NOT NULL,
+  title       TEXT,            -- e.g. Co-founder and CEO
+  location    TEXT,
+  comes_in    TEXT,            -- how often they come into Volta
+  can_help_with TEXT,          -- what they said they can help with
   role        TEXT NOT NULL DEFAULT 'founder' CHECK (role IN ('founder', 'admin'))
 );
 

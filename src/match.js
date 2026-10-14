@@ -1,7 +1,7 @@
 // Ranks stories by how close their meaning is to a blocker.
 import { similarity } from './embed.js';
 
-export const DEFAULT_MIN_SCORE = Number(process.env.MATCH_MIN_SCORE ?? 0.35);
+export const DEFAULT_MIN_SCORE = Number(process.env.MATCH_MIN_SCORE ?? 0.40);
 export const MAX_MATCHES = 3;
 
 /**
