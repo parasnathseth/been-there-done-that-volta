@@ -80,6 +80,19 @@ textarea { min-height: 76px; resize: vertical; }
 .trend.up { color: var(--good); background: rgba(62, 207, 142, 0.12); }
 .trend.down { color: var(--danger); background: rgba(255, 138, 122, 0.12); }
 .trend.flat, .trend.none { color: var(--muted); background: rgba(154, 161, 173, 0.12); }
+.ticker h2 { margin-bottom: 8px; }
+.ticker-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.ticker-col h3 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 8px; display: flex; gap: 6px; align-items: center; }
+.ticker-col.up h3, .ticker-col.up .arrow { color: var(--good); }
+.ticker-col.down h3, .ticker-col.down .arrow { color: var(--danger); }
+.ticker-col ul { list-style: none; margin: 0; padding: 0; }
+.ticker-col li { display: grid; grid-template-columns: auto auto 1fr; gap: 4px 8px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); }
+.ticker-col li .arrow { font-size: 11px; }
+.ticker-col .reason { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
+.ticker-col .more { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+.linklike { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--text); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.linklike:hover { text-decoration-color: currentColor; }
+@media (max-width: 600px) { .ticker-col li { grid-template-columns: auto 1fr; } .ticker-col .reason { grid-column: 2; } }
 .summary-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 16px; }
 .summary-head .sub { margin-bottom: 0; }
 .summary-head .viewas select { max-width: 100%; }

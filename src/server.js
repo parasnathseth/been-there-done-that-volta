@@ -262,9 +262,8 @@ app.patch('/api/blockers/:id', founderOnly, wrap(async (req, res) => {
 // ---------- Laura's summary ----------
 // Each figure is worked out twice: now, and as things stood at the start of this month,
 // so the page can show how it changed since last month.
-// Whole-residency view: totals only, hidden when based on fewer than 3 founders.
-// One-startup view (?startup=ID): exact figures and details for that startup, since Laura
-// already sees each startup's monthly updates in the portal.
+// Laura already sees each startup's monthly updates in the portal, so figures are exact.
+// One-startup view (?startup=ID) adds that startup's details.
 
 const HIGHER_IS_BETTER = { averageMonthsToSolve: false, openNow: false, sharedStories: true, reachedOut: true, storyHelped: true };
 const WINDOW_MONTHS = 6;
@@ -274,10 +273,11 @@ async function loadSummaryRows(startupId) {
   const params = startupId ? [startupId] : [];
   const [blockers, stories, outreach] = await Promise.all([
     query(`SELECT b.id, b.founder_id, b.text, b.reported_month, b.status, b.solved_month, b.match_consent, b.story_helped,
-                  f.name AS founder_name
-             FROM blockers b JOIN founders f ON f.id = b.founder_id ${filter}`, params),
-    query(`SELECT s.id, s.founder_id, s.problem, s.share, s.created_at, f.name AS founder_name
-             FROM stories s JOIN founders f ON f.id = s.founder_id ${filter}`, params),
+                  f.name AS founder_name, f.startup_id, st.name AS startup_name
+             FROM blockers b JOIN founders f ON f.id = b.founder_id LEFT JOIN startups st ON st.id = f.startup_id ${filter}`, params),
+    query(`SELECT s.id, s.founder_id, s.problem, s.share, s.created_at, f.name AS founder_name,
+                  f.startup_id, st.name AS startup_name
+             FROM stories s JOIN founders f ON f.id = s.founder_id LEFT JOIN startups st ON st.id = f.startup_id ${filter}`, params),
     query(`SELECT o.founder_id, o.created_at FROM outreach_clicks o JOIN founders f ON f.id = o.founder_id ${filter}`, params),
   ]);
   return { blockers: blockers.rows, stories: stories.rows, outreach: outreach.rows };
@@ -327,6 +327,57 @@ function trends(now, then) {
   return out;
 }
 
+// "This month" lists for the whole-residency view. Every reason is a recorded fact
+// (a blocker marked solved, a story shared, how long a blocker has been open), not a
+// prediction or an AI judgement. They are only as current as founders' monthly updates.
+const STUCK_MONTHS = 2;     // open this many months or more
+const PILING_UP = 3;        // this many open blockers or more
+const TICKER_LIMIT = 5;
+
+function tickerLists(rows) {
+  const thisMonth = toSqlMonth(currentMonth());
+  const isThisMonth = (d) => d && toSqlMonth(new Date(d)) === thisMonth;
+  const byStartup = new Map();
+  const entry = (id, name) => {
+    if (!byStartup.has(id)) byStartup.set(id, { id, name, solved: 0, helped: 0, stories: 0, open: [], });
+    return byStartup.get(id);
+  };
+  for (const b of rows.blockers) {
+    if (!b.startup_id) continue;
+    const e = entry(b.startup_id, b.startup_name);
+    if (b.status === 'solved' && isThisMonth(b.solved_month)) {
+      e.solved++;
+      if (b.story_helped) e.helped++;
+    }
+    if (b.status === 'open') e.open.push({ text: b.text, months: monthsBetween(new Date(b.reported_month), currentMonth()) });
+  }
+  for (const s of rows.stories) {
+    if (s.startup_id && s.share !== 'private' && isThisMonth(s.created_at)) entry(s.startup_id, s.startup_name).stories++;
+  }
+
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const forward = [];
+  const lookAt = [];
+  for (const e of byStartup.values()) {
+    const good = [];
+    if (e.solved) good.push(`solved ${plural(e.solved, 'blocker', 'blockers')} this month`);
+    if (e.helped) good.push(`a resident's story helped with ${e.helped === 1 ? 'one' : e.helped}`);
+    if (e.stories) good.push(`shared ${plural(e.stories, 'story', 'stories')} with other residents`);
+    if (good.length) forward.push({ id: e.id, name: e.name, reason: good.join(', '), weight: e.solved * 2 + e.stories });
+
+    const longest = e.open.sort((a, b) => b.months - a.months)[0];
+    const watch = [];
+    if (longest && longest.months >= STUCK_MONTHS) watch.push(`"${longest.text}" open ${plural(longest.months, 'month', 'months')}`);
+    if (e.open.length >= PILING_UP) watch.push(`${e.open.length} open blockers`);
+    if (watch.length) lookAt.push({ id: e.id, name: e.name, reason: watch.join(', '), weight: (longest?.months || 0) * 10 + e.open.length });
+  }
+  const top = (list) => {
+    const sorted = list.sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+    return { items: sorted.slice(0, TICKER_LIMIT).map(({ weight, ...rest }) => rest), more: Math.max(0, sorted.length - TICKER_LIMIT) };
+  };
+  return { movingForward: top(forward), worthALook: top(lookAt), stuckMonths: STUCK_MONTHS };
+}
+
 function monthTable(rows, hideSmall) {
   const months = [];
   for (let i = WINDOW_MONTHS - 1; i >= 0; i--) {
@@ -357,12 +408,13 @@ app.get('/api/summary', adminOnly, wrap(async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: 'Startup not found.' });
     startup = rows[0];
   }
-  const hideSmall = !startup;
+  const hideSmall = false;
   const rows = await loadSummaryRows(startup?.id);
   const now = figuresAt(rows, monthsAgo(-1), hideSmall);     // everything up to today
   const then = figuresAt(rows, currentMonth(), hideSmall);   // as of the start of this month
 
-  const result = { ...now, trends: trends(now, then), months: monthTable(rows, hideSmall), minFounders: MIN_FOUNDERS_FOR_TOTALS, startup };
+  const result = { ...now, trends: trends(now, then), months: monthTable(rows, hideSmall), startup };
+  if (!startup) result.ticker = tickerLists(rows);
 
   if (startup) {
     const team = await query(

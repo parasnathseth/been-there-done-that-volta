@@ -250,7 +250,6 @@ async function pageUpdate(main) {
 
   main.append(
     el('h1', {}, `${data.month} update`),
-    el('p', { class: 'sub' }, 'Yellow sections are new. Grey sections exist in the portal today and are not part of this demo.'),
     el('section', { class: 'card dim', 'aria-label': 'Existing fields' },
       el('span', { class: 'tag existing' }, 'EXISTS TODAY'),
       el('h2', {}, 'Numbers this month'),
@@ -260,7 +259,7 @@ async function pageUpdate(main) {
     el('section', { class: 'card new' },
       el('span', { class: 'tag new' }, 'NEW'),
       el('h2', {}, 'Blockers from past months: still stuck, or solved?'),
-      el('p', { class: 'hint' }, 'One tap each. Solved something? A few lines could save another resident weeks.'),
+      el('p', { class: 'hint' }, 'Solved something? A few lines could save another resident weeks.'),
       pastList.length ? pastList : el('p', { class: 'empty' }, 'No open blockers from past months.')),
     el('section', { class: 'card' },
       el('span', { class: 'tag existing' }, 'EXISTS TODAY'),
@@ -363,6 +362,25 @@ function tile(value, label, trend) {
     el('div', { class: 'lbl' }, label));
 }
 
+// "This month": startups moving forward and startups worth a look, each with its reason.
+function tickerSection(ticker, picker) {
+  const open = (id) => { picker.value = String(id); picker.dispatchEvent(new Event('change')); };
+  const column = (title, tone, arrow, list, empty) => el('div', { class: `ticker-col ${tone}` },
+    el('h3', {}, el('span', { class: 'arrow', 'aria-hidden': 'true' }, arrow), title),
+    list.items.length
+      ? el('ul', {}, list.items.map((it) => el('li', {},
+          el('span', { class: 'arrow', 'aria-hidden': 'true' }, arrow),
+          el('button', { class: 'linklike', type: 'button', onclick: () => open(it.id) }, it.name),
+          el('span', { class: 'reason' }, it.reason))))
+      : el('p', { class: 'empty' }, empty),
+    list.more ? el('p', { class: 'more' }, `and ${list.more} more`) : null);
+  return el('section', { class: 'card ticker', 'aria-label': 'This month' },
+    el('h2', {}, 'This month'),
+    el('div', { class: 'ticker-cols' },
+      column('Moving forward', 'up', '▲', ticker.movingForward, 'Nothing solved or shared yet this month.'),
+      column('Worth a look', 'down', '▼', ticker.worthALook, 'Nothing open for long.')));
+}
+
 async function pageSummary(main) {
   const startups = await api('/api/startups');
   const chosen = state.summaryStartup || '';
@@ -377,11 +395,7 @@ async function pageSummary(main) {
 
   main.append(
     el('div', { class: 'summary-head' },
-      el('div', {},
-        el('h1', {}, s.startup ? s.startup.name : 'How fast founders get unstuck'),
-        el('p', { class: 'sub' }, s.startup
-          ? 'One startup, exact figures. Coloured marks show the change since last month.'
-          : `Totals only, no names. Anything based on fewer than ${s.minFounders} founders is hidden. Coloured marks show the change since last month.`)),
+      el('h1', {}, s.startup ? s.startup.name : 'How fast founders get unstuck'),
       el('label', { class: 'viewas' }, 'Show', picker)),
     el('div', { class: 'tiles' },
       tile(val(s.averageMonthsToSolve), 'Average months to solve a blocker', t.averageMonthsToSolve),
@@ -390,6 +404,7 @@ async function pageSummary(main) {
       tile(val(s.reachedOut), 'Founders who reached out to a resident (last 6 months)', t.reachedOut),
       tile(s.storyHelped ? `${s.storyHelped.yes} of ${s.storyHelped.answered}` : val(null),
         "Solved blockers where a resident's story helped (last 6 months)", t.storyHelped)),
+    s.ticker ? tickerSection(s.ticker, picker) : null,
     el('section', { class: 'card' },
       el('h2', {}, 'Blockers by month'),
       el('div', { class: 'table-wrap' },

@@ -29,7 +29,7 @@ Use **View as** at the top to switch between people from the data pack (e.g. Jor
 | Monthly update | Founders | Mark past blockers solved or still working on it; answer "Did a resident's story help?"; share what helped (email, anonymous or private) with a preview; report this month's blocker and choose whether to use it for matching |
 | My matches | Founders | Stories that match each open blocker with matching turned on. "Write to ..." opens an editable, ready-to-send email with Open in Gmail, Open in Outlook, Open in my email app and Copy |
 | My stories and blockers | Founders | Change how each story is shared, delete it, or turn matching on or off for each blocker |
-| Unstuck summary | Laura | Average months to solve, blockers open, stories shared, founders who reached out to a resident, solved blockers where a story helped, and blockers reported and solved by month. Totals based on fewer than 3 founders are hidden |
+| Unstuck summary | Laura | Five figures with the change since last month (green better, red worse, grey unchanged); a 'This month' list of startups moving forward (blockers solved, stories shared) and worth a look (a blocker open 2+ months, or 3+ open blockers), each with its reason; blockers reported and solved by month; and a Show dropdown to see one startup's team, blockers and stories. Every reason comes from recorded facts, not predictions |
 
 **Tracking the proposal's two measures:** clicking any send option in the "Write to ..." window records that the founder reached out (which story and which option, never the message). The "Did a resident's story help?" answer is saved on the solved blocker. A click shows someone tried to reach out, not that an email was sent. The seeded clicks and answers are invented.
 
