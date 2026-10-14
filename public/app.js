@@ -119,7 +119,7 @@ function openEmailWindow(m, me) {
     el('div', { class: 'actions' },
       el('button', { class: 'btn primary', type: 'button',
         onclick: openWeb('gmail', () => `https://mail.google.com/mail/?view=cm&fs=1&to=${enc(to)}&su=${enc(subject.value)}&body=${enc(body.value)}`, 'Gmail') }, 'Open in Gmail'),
-      el('button', { class: 'btn primary', type: 'button',
+      el('button', { class: 'btn', type: 'button',
         onclick: openWeb('outlook', () => `https://outlook.office.com/mail/deeplink/compose?to=${enc(to)}&subject=${enc(subject.value)}&body=${enc(body.value)}`, 'Outlook') }, 'Open in Outlook'),
       appLink,
       el('button', { class: 'btn', type: 'button', onclick: async () => {
