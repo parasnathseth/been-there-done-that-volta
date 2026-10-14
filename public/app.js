@@ -1,7 +1,7 @@
 // Frontend for the Been There, Done That demo.
 // All user text is inserted with textContent, never as HTML.
 
-const state = { people: [], me: null, page: null };
+const state = { people: [], me: null, page: null, summaryStartup: '' };
 const $ = (id) => document.getElementById(id);
 
 // ---------- Helpers ----------
@@ -343,26 +343,95 @@ async function pageMine(main) {
 }
 
 // ---------- Page: Laura's summary ----------
+// Change since last month, shown the same way in every tile: green when it improved,
+// red when it got worse, muted grey when it didn't change.
+function trendBadge(t) {
+  if (t === undefined || t === null) {
+    return el('span', { class: 'trend none', title: 'Not enough data to compare with last month' }, '–');
+  }
+  const sign = t.change > 0 ? '+' : t.change < 0 ? '−' : '±';
+  const amount = Math.abs(t.change);
+  const label = t.unit === 'points' ? `${sign}${amount} pts` : `${sign}${amount}`;
+  const tone = t.good === null ? 'flat' : t.good ? 'up' : 'down';
+  const words = t.good === null ? 'No change since last month' : `${t.good ? 'Better' : 'Worse'} than last month`;
+  return el('span', { class: `trend ${tone}`, title: words, 'aria-label': `${label}, ${words.toLowerCase()}` }, label);
+}
+
+function tile(value, label, trend) {
+  return el('div', { class: 'tile' },
+    el('div', { class: 'tile-top' }, el('div', { class: 'num' }, value), trendBadge(trend)),
+    el('div', { class: 'lbl' }, label));
+}
+
 async function pageSummary(main) {
-  const s = await api('/api/summary');
-  const val = (v) => (v === null ? el('span', { class: 'hidden-val' }, 'hidden') : String(v));
+  const startups = await api('/api/startups');
+  const chosen = state.summaryStartup || '';
+  const s = await api(`/api/summary${chosen ? `?startup=${encodeURIComponent(chosen)}` : ''}`);
+  const val = (v) => (v === null || v === undefined ? el('span', { class: 'hidden-val' }, 'hidden') : String(v));
+  const t = s.trends || {};
+
+  const picker = el('select', { id: 'startup-picker', 'aria-label': 'Startup to show' },
+    el('option', { value: '' }, 'All startups'),
+    startups.map((st) => el('option', { value: String(st.id), selected: String(st.id) === chosen }, `${st.name} (${st.people})`)));
+  picker.addEventListener('change', () => { state.summaryStartup = picker.value; render('summary'); });
+
   main.append(
-    el('h1', {}, 'How fast founders get unstuck'),
-    el('p', { class: 'sub' }, `Totals only, no names. Anything based on fewer than ${s.minFounders} founders is hidden.`),
+    el('div', { class: 'summary-head' },
+      el('div', {},
+        el('h1', {}, s.startup ? s.startup.name : 'How fast founders get unstuck'),
+        el('p', { class: 'sub' }, s.startup
+          ? 'One startup, exact figures. Coloured marks show the change since last month.'
+          : `Totals only, no names. Anything based on fewer than ${s.minFounders} founders is hidden. Coloured marks show the change since last month.`)),
+      el('label', { class: 'viewas' }, 'Show', picker)),
     el('div', { class: 'tiles' },
-      el('div', { class: 'tile' }, el('div', { class: 'num' }, val(s.averageMonthsToSolve)), el('div', { class: 'lbl' }, 'Average months to solve a blocker')),
-      el('div', { class: 'tile' }, el('div', { class: 'num' }, val(s.openNow)), el('div', { class: 'lbl' }, 'Blockers open now')),
-      el('div', { class: 'tile' }, el('div', { class: 'num' }, val(s.sharedStories)), el('div', { class: 'lbl' }, 'Stories residents have shared')),
-      el('div', { class: 'tile' }, el('div', { class: 'num' }, val(s.reachedOut)), el('div', { class: 'lbl' }, 'Founders who reached out to a resident (last 6 months)')),
-      el('div', { class: 'tile' },
-        el('div', { class: 'num' }, s.storyHelped ? `${s.storyHelped.yes} of ${s.storyHelped.answered}` : val(null)),
-        el('div', { class: 'lbl' }, "Solved blockers where a resident's story helped (last 6 months)"))),
+      tile(val(s.averageMonthsToSolve), 'Average months to solve a blocker', t.averageMonthsToSolve),
+      tile(val(s.openNow), 'Blockers open now', t.openNow),
+      tile(val(s.sharedStories), 'Stories shared with other residents', t.sharedStories),
+      tile(val(s.reachedOut), 'Founders who reached out to a resident (last 6 months)', t.reachedOut),
+      tile(s.storyHelped ? `${s.storyHelped.yes} of ${s.storyHelped.answered}` : val(null),
+        "Solved blockers where a resident's story helped (last 6 months)", t.storyHelped)),
     el('section', { class: 'card' },
       el('h2', {}, 'Blockers by month'),
       el('div', { class: 'table-wrap' },
         el('table', {},
           el('thead', {}, el('tr', {}, el('th', {}, 'Month'), el('th', { class: 'num' }, 'Reported'), el('th', { class: 'num' }, 'Solved'))),
           el('tbody', {}, s.months.map((m) => el('tr', {}, el('td', {}, m.month), el('td', { class: 'num' }, val(m.opened)), el('td', { class: 'num' }, val(m.solved)))))))),
+  );
+
+  if (!s.startup) return;
+
+  const shareText = { email: 'Shared with email', anonymous: 'Shared anonymously', private: 'Private' };
+  main.append(
+    el('section', { class: 'card' },
+      el('h2', {}, 'Team'),
+      el('div', { class: 'table-wrap' }, el('table', {},
+        el('thead', {}, el('tr', {}, el('th', {}, 'Name'), el('th', {}, 'Role'), el('th', {}, 'Location'), el('th', {}, 'Comes into Volta'))),
+        el('tbody', {}, s.team.map((p) => el('tr', {}, el('td', {}, p.name), el('td', {}, p.title || ''), el('td', {}, p.location || ''), el('td', {}, p.comes_in || ''))))))),
+    el('section', { class: 'card' },
+      el('h2', {}, 'Open blockers'),
+      s.openBlockers.length
+        ? el('div', { class: 'table-wrap' }, el('table', {},
+            el('thead', {}, el('tr', {}, el('th', {}, 'Blocker'), el('th', {}, 'Who'), el('th', {}, 'Reported'), el('th', { class: 'num' }, 'Months open'), el('th', {}, 'Matching'))),
+            el('tbody', {}, s.openBlockers.map((b) => el('tr', {},
+              el('td', {}, b.text), el('td', {}, b.person), el('td', {}, b.reported), el('td', { class: 'num' }, String(b.monthsOpen)), el('td', {}, b.matching ? 'On' : 'Off'))))))
+        : el('p', { class: 'empty' }, 'No open blockers.')),
+    el('section', { class: 'card' },
+      el('h2', {}, 'Solved blockers'),
+      s.solvedBlockers.length
+        ? el('div', { class: 'table-wrap' }, el('table', {},
+            el('thead', {}, el('tr', {}, el('th', {}, 'Blocker'), el('th', {}, 'Who'), el('th', {}, 'Solved'), el('th', { class: 'num' }, 'Months to solve'), el('th', {}, 'A story helped?'))),
+            el('tbody', {}, s.solvedBlockers.map((b) => el('tr', {},
+              el('td', {}, b.text), el('td', {}, b.person), el('td', {}, b.solved), el('td', { class: 'num' }, String(b.monthsToSolve)),
+              el('td', {}, b.storyHelped === null ? 'Not answered' : b.storyHelped ? 'Yes' : 'No'))))))
+        : el('p', { class: 'empty' }, 'No solved blockers yet.')),
+    el('section', { class: 'card' },
+      el('h2', {}, 'Stories'),
+      s.stories.length
+        ? el('div', { class: 'table-wrap' }, el('table', {},
+            el('thead', {}, el('tr', {}, el('th', {}, 'Problem it solved'), el('th', {}, 'Who'), el('th', {}, 'Sharing'), el('th', {}, 'Shared'))),
+            el('tbody', {}, s.stories.map((st) => el('tr', {},
+              el('td', {}, st.problem), el('td', {}, st.person), el('td', {}, shareText[st.share]), el('td', {}, st.shared))))))
+        : el('p', { class: 'empty' }, 'No stories yet.')),
   );
 }
 

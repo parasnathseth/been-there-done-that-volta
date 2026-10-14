@@ -259,66 +259,130 @@ app.patch('/api/blockers/:id', founderOnly, wrap(async (req, res) => {
   res.json({ ok: true, matchConsent: on });
 }));
 
-// Laura's summary: totals only, no names. Hidden when based on fewer than 3 founders.
-app.get('/api/summary', adminOnly, wrap(async (req, res) => {
-  const since = toSqlMonth(monthsAgo(5));
-  const opened = await query(
-    `SELECT reported_month AS month, count(*)::int AS n, count(DISTINCT founder_id)::int AS founders
-       FROM blockers WHERE reported_month >= $1 GROUP BY reported_month`, [since]);
-  const solved = await query(
-    `SELECT solved_month AS month, count(*)::int AS n, count(DISTINCT founder_id)::int AS founders
-       FROM blockers WHERE status = 'solved' AND solved_month >= $1 GROUP BY solved_month`, [since]);
-  const durations = await query(
-    `SELECT reported_month, solved_month, founder_id FROM blockers WHERE status = 'solved'`);
-  const totals = await query(
-    `SELECT (SELECT count(*) FROM blockers WHERE status = 'open')::int AS open_now,
-            (SELECT count(DISTINCT founder_id) FROM blockers WHERE status = 'open')::int AS open_founders,
-            (SELECT count(*) FROM stories WHERE share <> 'private')::int AS shared_stories,
-            (SELECT count(DISTINCT founder_id) FROM stories WHERE share <> 'private')::int AS sharing_founders`);
-  // Proposal measures, over the same 6 months as the table.
-  const recent = since;
-  const outreach = await query(
-    `SELECT count(DISTINCT founder_id)::int AS founders, count(*)::int AS clicks
-       FROM outreach_clicks WHERE created_at >= $1`, [recent]);
-  const helped = await query(
-    `SELECT count(*) FILTER (WHERE story_helped)::int AS yes,
-            count(*) FILTER (WHERE story_helped IS NOT NULL)::int AS answered,
-            count(DISTINCT founder_id) FILTER (WHERE story_helped IS NOT NULL)::int AS founders
-       FROM blockers WHERE status = 'solved' AND solved_month >= $1`, [recent]);
+// ---------- Laura's summary ----------
+// Each figure is worked out twice: now, and as things stood at the start of this month,
+// so the page can show how it changed since last month.
+// Whole-residency view: totals only, hidden when based on fewer than 3 founders.
+// One-startup view (?startup=ID): exact figures and details for that startup, since Laura
+// already sees each startup's monthly updates in the portal.
 
-  const hide = (n, founders) => (founders >= MIN_FOUNDERS_FOR_TOTALS ? n : null);
-  const key = (d) => toSqlMonth(new Date(d));
-  const openedBy = new Map(opened.rows.map((r) => [key(r.month), r]));
-  const solvedBy = new Map(solved.rows.map((r) => [key(r.month), r]));
+const HIGHER_IS_BETTER = { averageMonthsToSolve: false, openNow: false, sharedStories: true, reachedOut: true, storyHelped: true };
+const WINDOW_MONTHS = 6;
 
-  const months = [];
-  for (let i = 5; i >= 0; i--) {
-    const m = monthsAgo(i);
-    const o = openedBy.get(toSqlMonth(m));
-    const s = solvedBy.get(toSqlMonth(m));
-    months.push({
-      month: monthLabel(m),
-      opened: o ? hide(o.n, o.founders) : 0,
-      solved: s ? hide(s.n, s.founders) : 0,
-    });
-  }
+async function loadSummaryRows(startupId) {
+  const filter = startupId ? 'WHERE f.startup_id = $1' : '';
+  const params = startupId ? [startupId] : [];
+  const [blockers, stories, outreach] = await Promise.all([
+    query(`SELECT b.id, b.founder_id, b.text, b.reported_month, b.status, b.solved_month, b.match_consent, b.story_helped,
+                  f.name AS founder_name
+             FROM blockers b JOIN founders f ON f.id = b.founder_id ${filter}`, params),
+    query(`SELECT s.id, s.founder_id, s.problem, s.share, s.created_at, f.name AS founder_name
+             FROM stories s JOIN founders f ON f.id = s.founder_id ${filter}`, params),
+    query(`SELECT o.founder_id, o.created_at FROM outreach_clicks o JOIN founders f ON f.id = o.founder_id ${filter}`, params),
+  ]);
+  return { blockers: blockers.rows, stories: stories.rows, outreach: outreach.rows };
+}
 
-  const d = durations.rows;
-  const avgMonths = d.length
-    ? d.reduce((sum, r) => sum + monthsBetween(new Date(r.reported_month), new Date(r.solved_month)), 0) / d.length
+/** Figures as they stood just before `cutoff` (the first day of a month). */
+function figuresAt(rows, cutoff, hideSmall) {
+  const windowStart = monthsAgo(WINDOW_MONTHS, cutoff);
+  const before = (d) => new Date(d) < cutoff;
+  const inWindow = (d) => new Date(d) >= windowStart && new Date(d) < cutoff;
+  const people = (list) => new Set(list.map((r) => r.founder_id)).size;
+  const hide = (value, list) => (!hideSmall || people(list) >= MIN_FOUNDERS_FOR_TOTALS ? value : null);
+
+  const open = rows.blockers.filter((b) => before(b.reported_month) && (b.status === 'open' || !before(b.solved_month)));
+  const solved = rows.blockers.filter((b) => b.status === 'solved' && before(b.solved_month));
+  const shared = rows.stories.filter((s) => s.share !== 'private' && before(s.created_at));
+  const clicks = rows.outreach.filter((o) => inWindow(o.created_at));
+  const answered = rows.blockers.filter((b) => b.status === 'solved' && b.story_helped !== null && inWindow(b.solved_month));
+
+  const avg = solved.length
+    ? Math.round((solved.reduce((sum, b) => sum + monthsBetween(new Date(b.reported_month), new Date(b.solved_month)), 0) / solved.length) * 10) / 10
     : null;
-  const t = totals.rows[0];
-  res.json({
-    months,
-    averageMonthsToSolve: new Set(d.map((r) => r.founder_id)).size >= MIN_FOUNDERS_FOR_TOTALS && avgMonths !== null
-      ? Math.round(avgMonths * 10) / 10 : null,
-    openNow: hide(t.open_now, t.open_founders),
-    sharedStories: hide(t.shared_stories, t.sharing_founders),
-    reachedOut: hide(outreach.rows[0].founders, outreach.rows[0].founders),
-    storyHelped: helped.rows[0].founders >= MIN_FOUNDERS_FOR_TOTALS
-      ? { yes: helped.rows[0].yes, answered: helped.rows[0].answered } : null,
-    minFounders: MIN_FOUNDERS_FOR_TOTALS,
-  });
+  const helpedYes = answered.filter((b) => b.story_helped).length;
+  return {
+    averageMonthsToSolve: hide(avg, solved),
+    openNow: hide(open.length, open),
+    sharedStories: hide(shared.length, shared),
+    reachedOut: hide(people(clicks), clicks),
+    storyHelped: hide(answered.length ? { yes: helpedYes, answered: answered.length, share: helpedYes / answered.length } : null, answered),
+  };
+}
+
+/** Change since last month for each figure: direction, amount and whether it's good. */
+function trends(now, then) {
+  const out = {};
+  for (const key of Object.keys(HIGHER_IS_BETTER)) {
+    const a = key === 'storyHelped' ? now[key]?.share : now[key];
+    const b = key === 'storyHelped' ? then[key]?.share : then[key];
+    if (a === null || a === undefined || b === null || b === undefined) { out[key] = null; continue; }
+    const change = Math.round((a - b) * (key === 'storyHelped' ? 100 : 10)) / (key === 'storyHelped' ? 1 : 10);
+    out[key] = {
+      change,                                   // storyHelped: percentage points
+      unit: key === 'storyHelped' ? 'points' : '',
+      good: change === 0 ? null : (change > 0) === HIGHER_IS_BETTER[key],
+    };
+  }
+  return out;
+}
+
+function monthTable(rows, hideSmall) {
+  const months = [];
+  for (let i = WINDOW_MONTHS - 1; i >= 0; i--) {
+    const m = monthsAgo(i);
+    const same = (d) => d && toSqlMonth(new Date(d)) === toSqlMonth(m);
+    const opened = rows.blockers.filter((b) => same(b.reported_month));
+    const solved = rows.blockers.filter((b) => b.status === 'solved' && same(b.solved_month));
+    const shown = (list) => (!hideSmall || new Set(list.map((b) => b.founder_id)).size >= MIN_FOUNDERS_FOR_TOTALS || list.length === 0 ? list.length : null);
+    months.push({ month: monthLabel(m), opened: shown(opened), solved: shown(solved) });
+  }
+  return months;
+}
+
+// List of startups for Laura's dropdown.
+app.get('/api/startups', adminOnly, wrap(async (req, res) => {
+  const { rows } = await query(
+    `SELECT st.id, st.name, count(f.id)::int AS people
+       FROM startups st JOIN founders f ON f.startup_id = st.id
+      GROUP BY st.id ORDER BY st.name`);
+  res.json(rows);
+}));
+
+app.get('/api/summary', adminOnly, wrap(async (req, res) => {
+  const startupId = req.query.startup ? Number(req.query.startup) : null;
+  let startup = null;
+  if (startupId) {
+    const { rows } = await query('SELECT id, name FROM startups WHERE id = $1', [startupId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Startup not found.' });
+    startup = rows[0];
+  }
+  const hideSmall = !startup;
+  const rows = await loadSummaryRows(startup?.id);
+  const now = figuresAt(rows, monthsAgo(-1), hideSmall);     // everything up to today
+  const then = figuresAt(rows, currentMonth(), hideSmall);   // as of the start of this month
+
+  const result = { ...now, trends: trends(now, then), months: monthTable(rows, hideSmall), minFounders: MIN_FOUNDERS_FOR_TOTALS, startup };
+
+  if (startup) {
+    const team = await query(
+      `SELECT name, title, location, comes_in FROM founders WHERE startup_id = $1 ORDER BY name`, [startup.id]);
+    result.team = team.rows;
+    result.openBlockers = rows.blockers.filter((b) => b.status === 'open')
+      .sort((a, b) => new Date(a.reported_month) - new Date(b.reported_month))
+      .map((b) => ({
+        text: b.text, person: b.founder_name, reported: monthLabel(b.reported_month),
+        monthsOpen: monthsBetween(new Date(b.reported_month), currentMonth()), matching: b.match_consent,
+      }));
+    result.solvedBlockers = rows.blockers.filter((b) => b.status === 'solved')
+      .sort((a, b) => new Date(b.solved_month) - new Date(a.solved_month))
+      .map((b) => ({
+        text: b.text, person: b.founder_name, solved: monthLabel(b.solved_month),
+        monthsToSolve: monthsBetween(new Date(b.reported_month), new Date(b.solved_month)), storyHelped: b.story_helped,
+      }));
+    result.stories = rows.stories.map((s) => ({ problem: s.problem, person: s.founder_name, share: s.share, shared: monthLabel(s.created_at) }));
+  }
+  res.json(result);
 }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));

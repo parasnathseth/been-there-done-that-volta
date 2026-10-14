@@ -75,7 +75,7 @@ try {
       );
     }
 
-    // Invented outreach: two in three founders with matching on "wrote to" their best email match last month.
+    // Invented outreach: two in three founders with matching on "wrote to" their best email match, last month or this month.
     const emailStories = people.filter((p) => p.share === 'email' && p.storyId)
       .map((p) => ({ id: p.storyId, companyId: p.companyId, embedding: p.storyEmbedding }));
     for (const [i, p] of people.filter((x) => x.stuckEmbedding).entries()) {
@@ -84,7 +84,7 @@ try {
       if (!best) continue;
       await db.query(
         `INSERT INTO outreach_clicks (founder_id, story_id, method, created_at) VALUES ($1, $2, $3, $4)`,
-        [p.founderId, best.id, ['gmail', 'outlook', 'app'][i % 3], monthsAgo(1)]
+        [p.founderId, best.id, ['gmail', 'outlook', 'app'][i % 3], i % 3 === 1 ? new Date() : monthsAgo(1)]
       );
     }
 
