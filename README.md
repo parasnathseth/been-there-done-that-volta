@@ -18,7 +18,7 @@ npm run db:seed             # loads the data pack (wipes existing demo data)
 npm start                   # http://localhost:3000
 ```
 
-The first run downloads the matching model (about 23 MB) into `.cache/`.
+The first run downloads the matching model (about 90 MB) from Hugging Face into `.cache/`.
 
 Use **View as** at the top to switch between people from the data pack (e.g. Jordan Gallant, Anjali Raman) and Laura (admin).
 
@@ -43,7 +43,7 @@ Run `npm run eval` to test matching on 43 blockers based on the data pack (`data
 |---|---|---|
 | 76% | 84% | 67% (4 of 6) |
 
-A lower minimum score finds more right stories but shows more wrong ones for unrelated problems. On an earlier invented data set, a larger free model (all-mpnet-base-v2, about 420 MB) did better; it can be tried by changing `MODEL_ID` in `.env` and re-running the seed.
+A lower minimum score finds more right stories but shows more wrong ones for unrelated problems. On an earlier invented data set, a larger free model (all-mpnet-base-v2, about 440 MB) did better; it can be tried by changing `MODEL_ID` in `.env` and re-running the seed.
 
 ## Consent and privacy rules (enforced on the server)
 
